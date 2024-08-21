@@ -19,18 +19,18 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "https://iphet-store.web.app",
     methods: ["POST", "GET", "DELETE"],
     credentials: true,
   })
 );
 
-const saltRounds = parseInt(process.env.SALT_ROUNDS);
+const saltRounds = parseInt(process.env.SALT_ROUNDS); 
 const db = mysql.createConnection({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "iphet_store",
+  host: process.env.DB_HOST || "sql12.freesqldatabase.com",
+  user: process.env.DB_USER || "sql12727096",
+  password: process.env.DB_PASSWORD || "QGwTusbwM5",
+  database: process.env.DB_NAME || "sql12727096",
 });
 
 db.connect((err) => {
