@@ -12,58 +12,46 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 require("dotenv").config();
-
+ 
 const upload = multer({ dest: "uploads/" });
 const app = express();
-app.use(express.json());
-app.use(cookieParser());
-app.use(
+app.use(express.json()); 
+app.use(cookieParser()); 
+app.use(  
   cors({
-    origin: "https://iphet-store.web.app",
+    origin: ["http://localhost:5173", "https://aileenpf-shop.com"], 
     methods: ["POST", "GET", "DELETE"],
     credentials: true,
   })
 );
 
-const saltRounds = parseInt(process.env.SALT_ROUNDS); 
+const saltRounds = parseInt(process.env.SALT_ROUNDS);
 const db = mysql.createConnection({
-  host: process.env.DB_HOST || "sql12.freesqldatabase.com",
-  user: process.env.DB_USER || "sql12727096",
-  password: process.env.DB_PASSWORD || "QGwTusbwM5",
-  database: process.env.DB_NAME || "sql12727096",
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,  
+  port: 3306
 });
 
-db.connect((err) => {
+db.connect(err => {
   if (err) {
-    console.error("Error connecting to the database:", err);
-    process.exit(1);
+    console.error('Database connection failed:', err.stack);
+    return;
   }
+  console.log('Connected to database.');
 });
 
 /* Register */
 
-const profilePictures = [
-  "/src/assets/images/profile/profile-01.jpg",
-  "/src/assets/images/profile/profile-02.jpg",
-  "/src/assets/images/profile/profile-03.jpg",
-  "/src/assets/images/profile/profile-04.jpg",
-  "/src/assets/images/profile/profile-05.jpg",
-  "/src/assets/images/profile/profile-06.jpg",
-  "/src/assets/images/profile/profile-07.jpg",
-  "/src/assets/images/profile/profile-08.jpg",
-  "/src/assets/images/profile/profile-10.jpg",
-];
-
 app.post("/signup", async (req, res) => {
   let { usernameNew, emailNew, passwordNew, confirmPassword, termsAgreed } = req.body;
-  const urole = "User";
+  const urole = "user";
 
-  // Convert to lowercase
   const username = usernameNew ? usernameNew.toLowerCase() : '';
   const email = emailNew ? emailNew.toLowerCase() : '';
 
   try {
-    // Validate input
     if (!username || !email || !passwordNew || !confirmPassword || !termsAgreed) {
       return res.status(400).json({
         type: "error",
@@ -86,7 +74,6 @@ app.post("/signup", async (req, res) => {
       });
     }
 
-    // Check if username or email already exists
     const [existingUsers] = await db.promise().query(
       "SELECT * FROM users WHERE username = ? OR email = ?",
       [username, email]
@@ -112,16 +99,14 @@ app.post("/signup", async (req, res) => {
       }
     }
 
-    // Create new user
-    const selectedProfile = profilePictures[Math.floor(Math.random() * profilePictures.length)];
+    const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(passwordNew, saltRounds);
 
     await db.promise().query(
-      "INSERT INTO users (profile, username, email, password, urole) VALUES (?, ?, ?, ?, ?)",
-      [selectedProfile, username, email, hashedPassword, urole]
+      "INSERT INTO users (username, email, password, urole) VALUES (?, ?, ?, ?)",
+      [username, email, hashedPassword, urole]
     );
 
-    // Send Discord notification
     axios.post(process.env.DISCORD_WEBHOOK_SIGNUP, {
       embeds: [
         {
@@ -163,22 +148,33 @@ Time: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
   }
 });
 
+
 /* Login */
 
-const authenticateToken = (req, res, next) => {
-  const token = req.header("Authorization");
-  if (!token) return res.status(401).send("Access Denied");
-
-  try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { username: verified.username };
-    next();
-  } catch (err) {
-    res.status(401).send("Invalid or Expired Token");
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    return res.status(403).send({ auth: false, message: 'No token provided.' });
   }
+
+  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(403).send({ auth: false, message: 'No token provided.' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(500).send({ auth: false, message: 'Failed to authenticate token.' });
+    }
+    req.userId = decoded.id;
+    req.userRole = decoded.urole;
+    req.user = { username: decoded.username };
+    next();
+  });
+
 };
 
-app.get("/protected", authenticateToken, (req, res) => {
+app.get("/protected", verifyToken, (req, res) => {
   db.query(
     "SELECT * FROM users WHERE username = ?",
     [req.user.username],
@@ -196,6 +192,13 @@ app.get("/protected", authenticateToken, (req, res) => {
   );
 });
 
+app.get('/admin', verifyToken, (req, res) => {
+  if (req.userRole !== 'admin') {
+    console.error('Access denied for user:', req.userRole);
+    return res.status(403).send({ message: 'Access denied.', urole: req.userRole });
+  }
+  res.status(200).send({ message: 'Welcome to the admin area', urole: req.userRole });
+});
 
 app.post("/signin", async (req, res) => {
   const { username, password, rememberMe } = req.body;
@@ -213,53 +216,9 @@ app.post("/signin", async (req, res) => {
       async (error, results) => {
         if (error) {
           console.error(error);
-          await axios.post(process.env.DISCORD_WEBHOOK_SIGNIN, {
-            embeds: [
-              {
-                title: "🔴 การเข้าสู่ระบบล้มเหลว",
-                description: "มีข้อผิดพลาดเกิดขึ้นในการเข้าสู่ระบบ",
-                color: 0xff0000,
-                fields: [
-                  {
-                    name: "รายละเอียดข้อผิดพลาด",
-                    value: `\`\`\`
-ชื่อผู้ใช้: ${username}
-ข้อผิดพลาด: ${error.message}
-\`\`\``,
-                  },
-                ],
-                footer: {
-                  text: "ระบบการเข้าสู่ระบบ",
-                },
-                timestamp: new Date(),
-              },
-            ],
-          });
           return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
         }
         if (results.length === 0) {
-          await axios.post(process.env.DISCORD_WEBHOOK_SIGNIN, {
-            embeds: [
-              {
-                title: "🔴 การเข้าสู่ระบบล้มเหลว",
-                description: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
-                color: 0xff0000,
-                fields: [
-                  {
-                    name: "ข้อมูลผู้ใช้",
-                    value: `\`\`\`
-ชื่อผู้ใช้: ${username}
-สถานะ: ไม่พบผู้ใช้
-\`\`\``,
-                  },
-                ],
-                footer: {
-                  text: "ระบบการเข้าสู่ระบบ",
-                },
-                timestamp: new Date(),
-              },
-            ],
-          });
           return res
             .status(401)
             .json({ type: "error", message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
@@ -293,16 +252,20 @@ app.post("/signin", async (req, res) => {
           });
           return res
             .status(401)
-            .json({ type: "error", message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
+            .json({ type: "error", message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง", auth: false, token: null });
         }
 
         const token = jwt.sign(
-          { username: user.username },
+          {
+            id: user.id,
+            urole: user.urole,
+            username: user.username
+          },
           process.env.JWT_SECRET,
           { expiresIn: rememberMe ? "7d" : "1d" }
         );
 
-        // ส่งการแจ้งเตือนเมื่อเข้าสู่ระบบสำเร็จ
+
         await axios.post(process.env.DISCORD_WEBHOOK_SIGNIN, {
           embeds: [
             {
@@ -314,6 +277,7 @@ app.post("/signin", async (req, res) => {
                   name: "ข้อมูลผู้ใช้",
                   value: `\`\`\`
 ชื่อผู้ใช้: ${username}
+สถานะ: ${user.urole} 
 Token: ${token}
 \`\`\``,
                 },
@@ -326,12 +290,11 @@ Token: ${token}
           ],
         });
 
-        res.status(200).json({ type: "success", message: "เข้าสู่ระบบสำเร็จ", token });
+        res.status(200).send({ type: "success", message: "เข้าสู่ระบบสำเร็จ", auth: true, token: token });
       }
     );
   } catch (error) {
     console.error(error);
-    // ส่งการแจ้งเตือนเมื่อเกิดข้อผิดพลาดทั่วไป
     await axios.post(process.env.DISCORD_WEBHOOK_SIGNIN, {
       embeds: [
         {
@@ -356,6 +319,7 @@ Token: ${token}
     return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
   }
 });
+
 
 /* Forgot Password */
 
@@ -950,6 +914,21 @@ ${error.message}
 
 /* Get Data */
 
+app.get("/website", async (req, res) => {
+  try {
+    db.query("SELECT * FROM website", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
 app.get("/users", async (req, res) => {
   try {
     db.query("SELECT * FROM users", (error, results) => {
@@ -980,9 +959,9 @@ app.get("/products", async (req, res) => {
   }
 });
 
-app.get("/data", async (req, res) => {
+app.get("/category", async (req, res) => {
   try {
-    db.query("SELECT * FROM data", (error, results) => {
+    db.query("SELECT * FROM category", (error, results) => {
       if (error) {
         console.error(error);
         return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
@@ -1122,16 +1101,15 @@ app.post("/payment", async (req, res) => {
   const statusProduct = 0;
 
   try {
-    // Fetch user details
     const [userResults] = await db.promise().query("SELECT * FROM users WHERE id = ?", [userId]);
     if (userResults.length === 0) {
       return res.status(404).json({ type: "error", message: "ไม่พบผู้ใช้" });
     }
 
     const userMoney = Math.round(userResults[0].money * 100);
-    const username = userResults[0].username;
+    const userUsername = userResults[0].username;
+    const initialUserMoney = userResults[0].money;
 
-    // Fetch product details
     const [productResults] = await db.promise().query("SELECT title, price, status FROM products WHERE product_id = ?", [productId]);
     if (productResults.length === 0) {
       return res.status(404).json({ type: "warning", message: "ไม่พบสินค้า" });
@@ -1149,8 +1127,7 @@ app.post("/payment", async (req, res) => {
       return res.status(400).json({ type: "warning", message: "ยอดเงินของคุณไม่เพียงพอ" });
     }
 
-    // Fetch data related to the product
-    const [dataResults] = await db.promise().query("SELECT password FROM data WHERE product_id = ?", [productId]);
+    const [dataResults] = await db.promise().query("SELECT username, password FROM data WHERE product_id = ?", [productId]);
     if (dataResults.length === 0) {
       return res.status(404).json({ type: "error", message: "ไม่พบข้อมูลของสินค้า" });
     }
@@ -1158,10 +1135,12 @@ app.post("/payment", async (req, res) => {
     const newMoney = userMoney - productPrice;
     await db.promise().query("UPDATE users SET money = ? WHERE id = ?", [newMoney / 100, userId]);
     await db.promise().query("UPDATE products SET status = ? WHERE product_id = ?", [statusProduct, productId]);
-    const { password } = dataResults[0];
+
+    const { username: productUsername, password } = dataResults[0];
+
     await db.promise().query(
       "INSERT INTO sell (user_id, product_id, payment, email, username, password) VALUES (?, ?, ?, ?, ?, ?)",
-      [userId, productId, productPrice / 100, userEmail, username, password]
+      [userId, productId, productPrice / 100, userEmail, productUsername, password]
     );
 
     const [finalUserResults] = await db.promise().query("SELECT * FROM users WHERE id = ?", [userId]);
@@ -1176,7 +1155,7 @@ app.post("/payment", async (req, res) => {
             {
               name: "ข้อมูลการซื้อสินค้า",
               value: `\`\`\`
-ชื่อผู้ใช้: ${username}
+ชื่อผู้ใช้: ${userUsername}
 สินค้า: ${productName}
 ราคาสินค้า: ${productPrice / 100} บาท
 \`\`\``,
@@ -1199,9 +1178,60 @@ app.post("/payment", async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+
+    // Send error notification to Discord
+    axios.post(process.env.DISCORD_WEBHOOK_SALES, {
+      embeds: [
+        {
+          title: "⚠️ เกิดข้อผิดพลาดในการทำรายการ",
+          description: "เกิดข้อผิดพลาดขณะทำการสั่งซื้อสินค้า",
+          color: 0xff0000,
+          fields: [
+            {
+              name: "ชื่อผู้ใช้",
+              value: `\`\`\`${userUsername}\`\`\``,
+              inline: true,
+            },
+            {
+              name: "สินค้า",
+              value: `\`\`\`${productName}\`\`\``,
+              inline: true,
+            },
+            {
+              name: "ราคา",
+              value: `\`\`\`${productPrice / 100} บาท\`\`\``,
+              inline: true,
+            },
+            {
+              name: "ยอดเงินก่อนซื้อ",
+              value: `\`\`\`${initialUserMoney} บาท\`\`\``,
+              inline: true,
+            },
+            {
+              name: "ยอดเงินหลังซื้อ (ถ้าถูกหัก)",
+              value: `\`\`\`${(userMoney - productPrice) / 100} บาท\`\`\``,
+              inline: true,
+            },
+            {
+              name: "รายละเอียดข้อผิดพลาด",
+              value: `\`\`\`${error.message}\`\`\``,
+              inline: false,
+            },
+          ],
+          footer: {
+            text: "ระบบการจัดการสินค้า",
+          },
+          timestamp: new Date(),
+        },
+      ],
+    }).catch(discordError => {
+      console.error("Error sending error notification to Discord:", discordError);
+    });
+
     return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
   }
 });
+
 
 
 /* Spin Wheel */
@@ -1502,7 +1532,7 @@ app.post("/addLike", async (req, res) => {
 
     return res.status(201).json({
       type: "error",
-      message: "กดไลค์สำเร็จ",
+      message: "กดไลค์ไม่สำเร็จ",
     });
   }
 });
@@ -1545,6 +1575,69 @@ app.post("/removeLike", async (req, res) => {
 
 const crypto = require('crypto');
 
+app.post("/editwebsite", async (req, res) => {
+  const {
+    name,
+    logo,
+    description,
+    color1,
+    color2,
+    color3,
+    color4,
+    color5,
+    imageBg,
+  } = req.body;
+
+  try {
+    db.query("SELECT * FROM website WHERE id = 1", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดในการดึงข้อมูล" });
+      }
+
+      const currentData = results[0];
+
+      const updatedName = name || currentData.name;
+      const updatedLogo = logo || currentData.logo;
+      const updatedDescription = description || currentData.description;
+      const updatedColor1 = color1 || currentData.color_primary;
+      const updatedColor2 = color2 || currentData.color_secondary;
+      const updatedColor3 = color3 || currentData.color_text;
+      const updatedColor4 = color4 || currentData.color_button;
+      const updatedColor5 = color5 || currentData.color_bg;
+      const updatedImageBg = imageBg || currentData.image_bg;
+
+      db.query(
+        "UPDATE website SET name = ?, logo = ?, description = ?, color_primary = ?, color_secondary = ?, color_text = ?, color_button = ?, color_bg = ?, image_bg = ? WHERE id = 1",
+        [
+          updatedName,
+          updatedLogo,
+          updatedDescription,
+          updatedColor1,
+          updatedColor2,
+          updatedColor3,
+          updatedColor4,
+          updatedColor5,
+          updatedImageBg,
+        ],
+        (error, results) => {
+          if (error) {
+            console.error(error);
+            return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+          }
+
+          return res.status(200).json({ type: "success", message: "อัปเดตข้อมูลสำเร็จ" });
+        }
+      );
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัปเดตข้อมูลเว็บไซต์" });
+  }
+});
+
+
+
 app.post("/add-product", async (req, res) => {
   const {
     title,
@@ -1560,7 +1653,6 @@ app.post("/add-product", async (req, res) => {
     image5,
     image6,
     status,
-    newProduct,
     recommendProduct,
   } = req.body;
 
@@ -1574,7 +1666,7 @@ app.post("/add-product", async (req, res) => {
     const productId = crypto.randomInt(100000000, 1000000000);
 
     db.query(
-      "INSERT INTO products (product_id, image1, image2, image3, image4, image5, image6, title, detail, category, price, new, recommend, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO products (product_id, image1, image2, image3, image4, image5, image6, title, detail, category, price, recommend, status) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         productId,
         image1,
@@ -1587,14 +1679,13 @@ app.post("/add-product", async (req, res) => {
         detail,
         category,
         price,
-        newProduct,
         recommendProduct,
         status,
       ],
       (error, results) => {
         if (error) {
           console.error(error);
-          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+          return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
         }
 
         db.query(
@@ -1603,22 +1694,23 @@ app.post("/add-product", async (req, res) => {
           (error, results) => {
             if (error) {
               console.error(error);
-              return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+              return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
             }
 
-            return res.status(201).json({ message: "เพิ่มสินค้าเสร็จสิ้น" });
+            return res.status(201).json({ type: "success", message: "เพิ่มสินค้าเสร็จสิ้น" });
           }
         );
       }
     );
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการเพิ่มสินค้า" });
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการเพิ่มสินค้า" });
   }
 });
 
 app.post("/update-product", async (req, res) => {
   const {
+    productId,
     title,
     detail,
     category,
@@ -1632,57 +1724,58 @@ app.post("/update-product", async (req, res) => {
     image5,
     image6,
     status,
-    newProduct,
     recommendProduct,
   } = req.body;
 
   try {
-
-    const productId = crypto.randomInt(100000000, 1000000000);
-
     db.query(
-      "UPDATE products (product_id, image1, image2, image3, image4, image5, image6, title, detail, category, price, new, recommend, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "UPDATE products SET title = ?, detail = ?, category = ?, price = ?, image1 = ?, image2 = ?, image3 = ?, image4 = ?, image5 = ?, image6 = ?, status = ?, recommend = ? WHERE product_id = ?",
       [
-        productId,
+        title,
+        detail,
+        category,
+        price,
         image1,
         image2,
         image3,
         image4,
         image5,
         image6,
-        title,
-        detail,
-        category,
-        price,
-        newProduct,
-        recommendProduct,
         status,
+        recommendProduct,
+        productId,
       ],
       (error, results) => {
         if (error) {
           console.error(error);
-          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+          return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
         }
 
-        db.query(
-          "UPDATE data (product_id, username, password) VALUES (?, ?, ?)",
-          [productId, username, password],
-          (error, results) => {
-            if (error) {
-              console.error(error);
-              return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-            }
+        if (username || password) {
+          db.query(
+            "UPDATE data SET username = ?, password = ? WHERE product_id = ?",
+            [username, password, productId],
+            (error, results) => {
+              if (error) {
+                console.error(error);
+                return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+              }
 
-            return res.status(201).json({ message: "เพิ่มสินค้าเสร็จสิ้น" });
-          }
-        );
+              return res.status(200).json({ type: "success", message: "อัพเดตสินค้าสำเร็จ" });
+            }
+          );
+        } else {
+          return res.status(200).json({ type: "success", message: "อัพเดตสินค้าสำเร็จ" });
+        }
       }
     );
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการเพิ่มสินค้า" });
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตสินค้า" });
   }
 });
+
+
 
 app.post("/delete-product", async (req, res) => {
   const { productId } = req.body;
@@ -1690,26 +1783,255 @@ app.post("/delete-product", async (req, res) => {
   try {
     if (!productId) {
       return res.status(400).json({
+        type: "error", message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
+      });
+    }
+
+    db.query(
+      "DELETE FROM data WHERE id = ?",
+      [productId],
+      (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+        db.query(
+          "DELETE FROM products WHERE id = ?",
+          [productId],
+          (error, results) => {
+            if (error) {
+              console.error(error);
+              return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+            }
+            return res.status(201).json({ type: "success", message: "ลบสินค้าเสร็จสิ้น" });
+          }
+        );
+      }
+    );
+
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการเพิ่มสินค้า" });
+  }
+});
+
+
+app.post("/add-category", async (req, res) => {
+  const {
+    name,
+    image,
+    status,
+  } = req.body;
+
+  try {
+    if (!name || !image) {
+      return res.status(400).json({
         message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
       });
     }
 
     db.query(
-      "DELETE FROM products WHERE id = ?",
-      [productId],
+      "INSERT INTO category (name, image, status) VALUES ( ?, ?, ?)",
+      [
+        name,
+        image,
+        status,
+      ],
+      (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+        return res.status(201).json({ type: "ssuccess", message: "เพิ่มหมวดหมู่เสร็จสิ้น" });
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการเพิ่มหมวดหมู่" });
+  }
+});
+
+app.post("/update-category", async (req, res) => {
+  const { categoryId, name, image, status } = req.body;
+
+  try {
+    db.query("SELECT * FROM category WHERE id = ?", [categoryId], (error, results) => {
+      if (error || results.length === 0) {
+        return res.status(500).json({ type: "error", message: "ไม่พบหมวดหมู่หรือเกิดข้อผิดพลาด" });
+      }
+
+      const currentCategory = results[0];
+      const updateFields = [];
+      const updateValues = [];
+
+      if (name && name !== currentCategory.name) {
+        updateFields.push("name = ?");
+        updateValues.push(name);
+      }
+      if (image && image !== currentCategory.image) {
+        updateFields.push("image = ?");
+        updateValues.push(image);
+      }
+      if (status !== undefined && status !== currentCategory.status) {
+        updateFields.push("status = ?");
+        updateValues.push(status);
+      }
+
+      if (updateFields.length > 0) {
+        updateValues.push(categoryId);
+        const updateQuery = `UPDATE category SET ${updateFields.join(", ")} WHERE id = ?`;
+        db.query(updateQuery, updateValues, (updateError) => {
+          if (updateError) {
+            return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตหมวดหมู่" });
+          }
+          return res.status(200).json({ type: "success", message: "อัพเดตหมวดหมู่เสร็จสิ้น" });
+        });
+      } else {
+        return res.status(200).json({ type: "info", message: "ไม่มีการเปลี่ยนแปลงข้อมูลหมวดหมู่" });
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตหมวดหมู่" });
+  }
+});
+
+app.post("/delete-category", async (req, res) => {
+  const { categoryId } = req.body;
+
+  try {
+    if (!categoryId) {
+      return res.status(400).json({
+        message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
+      });
+    }
+
+    db.query(
+      "DELETE FROM category WHERE id = ?",
+      [categoryId],
       (error, results) => {
         if (error) {
           console.error(error);
           return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
         }
-        return res.status(201).json({ message: "ลบสินค้าเสร็จสิ้น" });
+        return res.status(201).json({ message: "ลบหมวดหมู่เสร็จสิ้น" });
+      }
+    );
+
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการลบหมวดหมู่" });
+  }
+});
+
+app.post("/add-event", async (req, res) => {
+  const {
+    title,
+    image,
+    status,
+  } = req.body;
+
+  try {
+    if (!title || !image) {
+      return res.status(400).json({
+        message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
+      });
+    }
+
+    db.query(
+      "INSERT INTO events (title, image, status) VALUES ( ?, ?, ?)",
+      [
+        title,
+        image,
+        status,
+      ],
+      (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+        return res.status(201).json({ type: "ssuccess", message: "เพิ่มกิจกรรมเสร็จสิ้น" });
       }
     );
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการเพิ่มสินค้า" });
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการเพิ่มกิจกรรม" });
   }
 });
+
+app.post("/update-event", async (req, res) => {
+  const { eventId, title, image, status } = req.body;
+
+  try {
+    db.query("SELECT * FROM events WHERE id = ?", [eventId], (error, results) => {
+      if (error || results.length === 0) {
+        return res.status(500).json({ type: "error", message: "ไม่พบกิจกรรมหรือเกิดข้อผิดพลาด" });
+      }
+
+      const currentEvent = results[0];
+      const updateFields = [];
+      const updateValues = [];
+
+      if (title && title !== currentEvent.title) {
+        updateFields.push("title = ?");
+        updateValues.push(title);
+      }
+      if (image && image !== currentEvent.image) {
+        updateFields.push("image = ?");
+        updateValues.push(image);
+      }
+      if (status !== undefined && status !== currentEvent.status) {
+        updateFields.push("status = ?");
+        updateValues.push(status);
+      }
+
+      if (updateFields.length > 0) {
+        updateValues.push(eventId);
+        const updateQuery = `UPDATE events SET ${updateFields.join(", ")} WHERE id = ?`;
+        db.query(updateQuery, updateValues, (updateError) => {
+          if (updateError) {
+            return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตกิจกรรม" });
+          }
+          return res.status(200).json({ type: "success", message: "อัพเดตกิจกรรมเสร็จสิ้น" });
+        });
+      } else {
+        return res.status(200).json({ type: "info", message: "ไม่มีการเปลี่ยนแปลงข้อมูลกิจกรรม" });
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตกิจกรรม" });
+  }
+});
+
+app.post("/delete-event", async (req, res) => {
+  const { eventId } = req.body;
+
+  try {
+    if (!eventId) {
+      return res.status(400).json({
+        message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
+      });
+    }
+
+    db.query(
+      "DELETE FROM events WHERE id = ?",
+      [eventId],
+      (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+        return res.status(201).json({ message: "ลบกิจกรรมเสร็จสิ้น" });
+      }
+    );
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการลบกิจกรรม" });
+  }
+});
+
 app.post("/delete-user", async (req, res) => {
   const { userId } = req.body;
 
@@ -1959,7 +2281,7 @@ function loadChannelData() {
 
 
 const { Client, IntentsBitField, PermissionsBitField } = require('discord.js');
-const { SlashCommandBuilder, EmbedBuilder } = require('@discordjs/builders');
+const { EmbedBuilder } = require('@discordjs/builders');
 
 const client = new Client({
   intents: [
@@ -2122,10 +2444,10 @@ client.on('guildMemberRemove', async member => {
   try {
     await channel.send({ embeds: [embed] });
   } catch (error) {
-    console.error('Error sending leave message:', error);
-  }
+    console.error('Error sending leave message:', error); 
+  } 
 });
 
-app.listen(3002, () => {
+app.listen(3001, () => {
   console.log(`Server is running...`);
-});
+}); 
