@@ -12,14 +12,14 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 require("dotenv").config();
- 
+
 const upload = multer({ dest: "uploads/" });
 const app = express();
-app.use(express.json()); 
-app.use(cookieParser()); 
-app.use(  
+app.use(express.json());
+app.use(cookieParser());
+app.use(
   cors({
-    origin: ["http://localhost:5173", "https://aileenpf-shop.com"], 
+    origin: ["http://localhost:5173", "https://aileenpf-shop.com", "https://iphet-store.web.app"],
     methods: ["POST", "GET", "DELETE"],
     credentials: true,
   })
@@ -29,8 +29,8 @@ const saltRounds = parseInt(process.env.SALT_ROUNDS);
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,  
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
   port: 3306
 });
 
@@ -41,6 +41,266 @@ db.connect(err => {
   }
   console.log('Connected to database.');
 });
+
+app.get("/", (req, res) => {
+  db.connect((err) => {
+    if (err) {
+      res.send('Database connection failed: ' + err.stack);
+    } else {
+      res.send('Connected to database successfully.');
+    }
+  });
+});
+
+
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    return res.status(403).send({ auth: false, message: 'No token provided.' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(403).send({ auth: false, message: 'No token provided.' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(500).send({ auth: false, message: 'Failed to authenticate token.' });
+    }
+    req.userId = decoded.id;
+    req.userRole = decoded.urole;
+    req.user = { username: decoded.username };
+    next();
+  });
+
+};
+
+app.get("/protected", verifyToken, (req, res) => {
+  db.query(
+    "SELECT * FROM users WHERE username = ?",
+    [req.user.username],
+    async (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      if (results.length === 0) {
+        return res.status(404).json({ type: "error", message: "ไม่พบผู้ใช้" });
+      }
+      const user = results[0];
+      res.status(200).json({ type: "success", message: "success", user });
+    }
+  );
+});
+
+app.get('/admin', verifyToken, (req, res) => {
+  if (req.userRole !== 'admin') {
+    console.error('Access denied for user:', req.userRole);
+    return res.status(403).send({ message: 'Access denied.', urole: req.userRole });
+  }
+  res.status(200).send({ message: 'Welcome to the admin area', urole: req.userRole });
+});
+
+/* Get Data */
+
+app.get("/website", async (req, res) => {
+  try {
+    const id = 1; // กำหนดค่า id เป็น 1
+    db.query("SELECT * FROM website WHERE id = ?", [id], (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/users", async (req, res) => {
+  try {
+    db.query("SELECT * FROM users", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/products", async (req, res) => {
+  try {
+    db.query("SELECT * FROM products", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/category", async (req, res) => {
+  try {
+    db.query("SELECT * FROM category", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/topups", async (req, res) => {
+  try {
+    db.query("SELECT * FROM topups", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/category", async (req, res) => {
+  try {
+    db.query("SELECT * FROM category", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/sell", async (req, res) => {
+  try {
+    db.query("SELECT * FROM sell", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/topupgame", async (req, res) => {
+  try {
+    db.query("SELECT * FROM topupgame", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/events", async (req, res) => {
+  try {
+    db.query("SELECT * FROM events", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/historyevents", async (req, res) => {
+  try {
+    db.query("SELECT * FROM historyevent", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/reviews", async (req, res) => {
+  try {
+    db.query("SELECT * FROM reviews", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+app.get("/like", async (req, res) => {
+  try {
+    db.query("SELECT * FROM likecomment", (error, results) => {
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+      }
+      res.status(200).json(results);
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Post Data*/
 
 /* Register */
 
@@ -148,57 +408,7 @@ Time: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
   }
 });
 
-
 /* Login */
-
-const verifyToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  if (!authHeader) {
-    return res.status(403).send({ auth: false, message: 'No token provided.' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  if (!token) {
-    return res.status(403).send({ auth: false, message: 'No token provided.' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(500).send({ auth: false, message: 'Failed to authenticate token.' });
-    }
-    req.userId = decoded.id;
-    req.userRole = decoded.urole;
-    req.user = { username: decoded.username };
-    next();
-  });
-
-};
-
-app.get("/protected", verifyToken, (req, res) => {
-  db.query(
-    "SELECT * FROM users WHERE username = ?",
-    [req.user.username],
-    async (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      if (results.length === 0) {
-        return res.status(404).json({ type: "error", message: "ไม่พบผู้ใช้" });
-      }
-      const user = results[0];
-      res.status(200).json({ type: "success", message: "success", user });
-    }
-  );
-});
-
-app.get('/admin', verifyToken, (req, res) => {
-  if (req.userRole !== 'admin') {
-    console.error('Access denied for user:', req.userRole);
-    return res.status(403).send({ message: 'Access denied.', urole: req.userRole });
-  }
-  res.status(200).send({ message: 'Welcome to the admin area', urole: req.userRole });
-});
 
 app.post("/signin", async (req, res) => {
   const { username, password, rememberMe } = req.body;
@@ -640,6 +850,63 @@ Email: ${email}
 
 /* Topups */
 
+app.post("/change-password", async (req, res) => {
+  const { userId, password_n, password_c, password } = req.body;
+
+  if (password_n !== password_c) {
+    return res.status(400).json({ message: "รหัสผ่านใหม่ไม่ตรงกัน" });
+  }
+
+  try {
+    db.query(
+      "SELECT * FROM users WHERE id = ?",
+      [userId],
+      async (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+
+        if (results.length === 0) {
+          return res.status(404).json({ message: "ไม่พบผู้ใช้" });
+        }
+
+        const user = results[0];
+
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+          return res
+            .status(401)
+            .json({ message: "รหัสผ่านปัจจุบันไม่ถูกต้อง" });
+        }
+
+        const hashedNewPassword = await bcrypt.hash(password_n, 10);
+
+        db.query(
+          "UPDATE users SET password = ? WHERE id = ?",
+          [hashedNewPassword, userId],
+          (error) => {
+            if (error) {
+              console.error(error);
+              return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+            }
+
+            return res
+              .status(200)
+              .json({ message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว" });
+          }
+        );
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ message: "เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน" });
+  }
+});
+
+
 app.post("/angpro", (req, res) => {
   const { userId, urlAngpro } = req.body;
 
@@ -910,190 +1177,6 @@ ${error.message}
   }
 });
 
-
-
-/* Get Data */
-
-app.get("/website", async (req, res) => {
-  try {
-    db.query("SELECT * FROM website", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/users", async (req, res) => {
-  try {
-    db.query("SELECT * FROM users", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/products", async (req, res) => {
-  try {
-    db.query("SELECT * FROM products", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/category", async (req, res) => {
-  try {
-    db.query("SELECT * FROM category", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/topups", async (req, res) => {
-  try {
-    db.query("SELECT * FROM topups", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/category", async (req, res) => {
-  try {
-    db.query("SELECT * FROM category", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/sell", async (req, res) => {
-  try {
-    db.query("SELECT * FROM sell", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/topupgame", async (req, res) => {
-  try {
-    db.query("SELECT * FROM topupgame", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/events", async (req, res) => {
-  try {
-    db.query("SELECT * FROM events", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/historyevents", async (req, res) => {
-  try {
-    db.query("SELECT * FROM historyevent", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/reviews", async (req, res) => {
-  try {
-    db.query("SELECT * FROM reviews", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
-app.get("/like", async (req, res) => {
-  try {
-    db.query("SELECT * FROM likeComment", (error, results) => {
-      if (error) {
-        console.error(error);
-        return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-      }
-      res.status(200).json(results);
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: "Token ไม่ถูกต้อง" });
-  }
-});
-
 /* Payment Product */
 
 app.post("/payment", async (req, res) => {
@@ -1232,8 +1315,6 @@ app.post("/payment", async (req, res) => {
   }
 });
 
-
-
 /* Spin Wheel */
 
 app.post("/Spin", async (req, res) => {
@@ -1290,8 +1371,7 @@ app.post("/Spin", async (req, res) => {
 /* Reward Wheel */
 
 app.post("/reward", async (req, res) => {
-  const { userId, reward } = req.body;
-  const type = 'wheel';
+  const { userId, reward, type } = req.body;
 
   try {
     await db.promise().query("START TRANSACTION");
@@ -1373,8 +1453,6 @@ app.post("/reward", async (req, res) => {
   }
 });
 
-
-
 /* comment */
 
 app.post("/addComment", async (req, res) => {
@@ -1439,7 +1517,6 @@ app.post("/addComment", async (req, res) => {
   }
 });
 
-
 app.post("/removeComment", async (req, res) => {
   const { userId, commentId } = req.body;
 
@@ -1503,9 +1580,12 @@ app.post("/removeComment", async (req, res) => {
   }
 });
 
-
 app.post("/addLike", async (req, res) => {
   const { userId, commentId } = req.body;
+
+  if (!userId || !commentId) {
+    return res.status(400).json({ type: "error", message: "ข้อมูลไม่ครบถ้วน" });
+  }
 
   try {
     const [userResults] = await db
@@ -1515,10 +1595,22 @@ app.post("/addLike", async (req, res) => {
       return res.status(404).json({ type: "error", message: "ไม่พบผู้ใช้" });
     }
 
+    const [likeResults] = await db
+      .promise()
+      .query("SELECT * FROM likecomment WHERE user_id = ? AND comment_id = ?", [userId, commentId]);
+
+    if (likeResults.length > 0) {
+      return res.status(409).json({
+        type: "warning",
+        message: "คุณได้กดไลค์ในคอมเมนต์นี้แล้ว",
+      });
+    }
+
+    // เพิ่มไลค์
     await db
       .promise()
       .query(
-        "INSERT INTO likeComment (user_id, comment_id) VALUES (?, ?)",
+        "INSERT INTO likecomment (user_id, comment_id) VALUES (?, ?)",
         [userId, commentId]
       );
 
@@ -1528,17 +1620,23 @@ app.post("/addLike", async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("Error in /addLike:", error);
 
-    return res.status(201).json({
+    return res.status(500).json({
       type: "error",
       message: "กดไลค์ไม่สำเร็จ",
     });
   }
 });
 
+
 app.post("/removeLike", async (req, res) => {
   const { userId, commentId } = req.body;
+
+  // ตรวจสอบข้อมูลที่รับเข้ามา
+  if (!userId || !commentId) {
+    return res.status(400).json({ type: "error", message: "ข้อมูลไม่ครบถ้วน" });
+  }
 
   try {
     const [userResults] = await db
@@ -1548,10 +1646,22 @@ app.post("/removeLike", async (req, res) => {
       return res.status(404).json({ type: "error", message: "ไม่พบผู้ใช้" });
     }
 
+    const [likeResults] = await db
+      .promise()
+      .query("SELECT * FROM likecomment WHERE user_id = ? AND comment_id = ?", [userId, commentId]);
+
+    if (likeResults.length === 0) {
+      return res.status(404).json({
+        type: "warning",
+        message: "ไม่พบไลค์ที่ต้องการลบ",
+      });
+    }
+
+    // ลบไลค์
     await db
       .promise()
       .query(
-        "DELETE FROM likeComment WHERE user_id = ? AND comment_id = ?",
+        "DELETE FROM likecomment WHERE user_id = ? AND comment_id = ?",
         [userId, commentId]
       );
 
@@ -1561,14 +1671,15 @@ app.post("/removeLike", async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("Error in /removeLike:", error);
 
     return res.status(500).json({
       type: "error",
-      message: "เอาไลค์ออกสำเร็จ",
+      message: "เกิดข้อผิดพลาดในการลบไลค์",
     });
   }
 });
+
 
 
 /* Admin */
@@ -2032,6 +2143,334 @@ app.post("/delete-event", async (req, res) => {
   }
 });
 
+app.post("/add-topup-game", async (req, res) => {
+  const {
+    title,
+    detail,
+    image,
+    imageReward,
+    banner,
+    reward,
+    select1,
+    select2,
+    select3,
+    select4,
+    select5,
+    select6,
+    select7,
+    select8,
+    price1,
+    price2,
+    price3,
+    price4,
+    price5,
+    price6,
+    price7,
+    price8,
+    status,
+  } = req.body;
+
+  try {
+    if (!title || !image) {
+      return res.status(400).json({
+        message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
+      });
+    }
+
+    const nameurl = title.toLowerCase().replace(/\s+/g, ''); // แปลง title เป็นตัวพิมพ์เล็กและลบช่องว่าง
+
+    db.query(
+      `INSERT INTO topupgame 
+      (title, detail, image, image_reward, banner, reward, select1, select2, select3, select4, select5, select6, select7, select8, price1, price2, price3, price4, price5, price6, price7, price8, status, nameurl) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, detail, image, imageReward, banner, reward, select1, select2, select3, select4, select5, select6, select7, select8, price1, price2, price3, price4, price5, price6, price7, price8, status, nameurl],
+      (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+        return res.status(201).json({ type: "success", message: "เพิ่มกิจกรรมเสร็จสิ้น" });
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการเพิ่มกิจกรรม" });
+  }
+});
+
+app.post("/update-topup-game", async (req, res) => {
+  const {
+    TopupGameId,
+    title,
+    detail,
+    image,
+    imageReward,
+    banner,
+    reward,
+    select1,
+    select2,
+    select3,
+    select4,
+    select5,
+    select6,
+    select7,
+    select8,
+    price1,
+    price2,
+    price3,
+    price4,
+    price5,
+    price6,
+    price7,
+    price8,
+    status
+  } = req.body;
+
+  try {
+    db.query("SELECT * FROM topupgame WHERE id = ?", [TopupGameId], (error, results) => {
+      if (error || results.length === 0) {
+        return res.status(500).json({ type: "error", message: "ไม่พบกิจกรรมหรือเกิดข้อผิดพลาด" });
+      }
+
+      const currentTopupGame = results[0];
+      const updateFields = [];
+      const updateValues = [];
+
+      if (title && title !== currentTopupGame.title) {
+        updateFields.push("title = ?");
+        updateValues.push(title);
+        const nameurl = title.toLowerCase().replace(/\s+/g, '');
+        updateFields.push("nameurl = ?");
+        updateValues.push(nameurl);
+      }
+      if (detail && detail !== currentTopupGame.detail) {
+        updateFields.push("detail = ?");
+        updateValues.push(detail);
+      }
+      if (image && image !== currentTopupGame.image) {
+        updateFields.push("image = ?");
+        updateValues.push(image);
+      }
+      if (imageReward && imageReward !== currentTopupGame.imageReward) {
+        updateFields.push("image_reward = ?");
+        updateValues.push(imageReward);
+      }
+      if (banner && banner !== currentTopupGame.banner) {
+        updateFields.push("banner = ?");
+        updateValues.push(banner);
+      }
+      if (reward && reward !== currentTopupGame.reward) {
+        updateFields.push("reward = ?");
+        updateValues.push(reward);
+      }
+      if (select1 && select1 !== currentTopupGame.select1) {
+        updateFields.push("select1 = ?");
+        updateValues.push(select1);
+      }
+      if (select2 && select2 !== currentTopupGame.select2) {
+        updateFields.push("select2 = ?");
+        updateValues.push(select2);
+      }
+      if (select3 && select3 !== currentTopupGame.select3) {
+        updateFields.push("select3 = ?");
+        updateValues.push(select3);
+      }
+      if (select4 && select4 !== currentTopupGame.select4) {
+        updateFields.push("select4 = ?");
+        updateValues.push(select4);
+      }
+      if (select5 && select5 !== currentTopupGame.select5) {
+        updateFields.push("select5 = ?");
+        updateValues.push(select5);
+      }
+      if (select6 && select6 !== currentTopupGame.select6) {
+        updateFields.push("select6 = ?");
+        updateValues.push(select6);
+      }
+      if (select7 && select7 !== currentTopupGame.select7) {
+        updateFields.push("select7 = ?");
+        updateValues.push(select7);
+      }
+      if (select8 && select8 !== currentTopupGame.select8) {
+        updateFields.push("select8 = ?");
+        updateValues.push(select8);
+      }
+      if (price1 && price1 !== currentTopupGame.price1) {
+        updateFields.push("price1 = ?");
+        updateValues.push(price1);
+      }
+      if (price2 && price2 !== currentTopupGame.price2) {
+        updateFields.push("price2 = ?");
+        updateValues.push(price2);
+      }
+      if (price3 && price3 !== currentTopupGame.price3) {
+        updateFields.push("price3 = ?");
+        updateValues.push(price3);
+      }
+      if (price4 && price4 !== currentTopupGame.price4) {
+        updateFields.push("price4 = ?");
+        updateValues.push(price4);
+      }
+      if (price5 && price5 !== currentTopupGame.price5) {
+        updateFields.push("price5 = ?");
+        updateValues.push(price5);
+      }
+      if (price6 && price6 !== currentTopupGame.price6) {
+        updateFields.push("price6 = ?");
+        updateValues.push(price6);
+      }
+      if (price7 && price7 !== currentTopupGame.price7) {
+        updateFields.push("price7 = ?");
+        updateValues.push(price7);
+      }
+      if (price8 && price8 !== currentTopupGame.price8) {
+        updateFields.push("price8 = ?");
+        updateValues.push(price8);
+      }
+      if (status !== undefined && status !== currentTopupGame.status) {
+        updateFields.push("status = ?");
+        updateValues.push(status);
+      }
+
+      if (updateFields.length > 0) {
+        updateValues.push(TopupGameId);
+        const updateQuery = `UPDATE topupgame SET ${updateFields.join(", ")} WHERE id = ?`;
+        db.query(updateQuery, updateValues, (updateError) => {
+          if (updateError) {
+            return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตกิจกรรม" });
+          }
+          return res.status(200).json({ type: "success", message: "อัพเดตกิจกรรมเสร็จสิ้น" });
+        });
+      } else {
+        return res.status(200).json({ type: "info", message: "ไม่มีการเปลี่ยนแปลงข้อมูลกิจกรรม" });
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตกิจกรรม" });
+  }
+});
+
+app.post("/delete-topup-game", async (req, res) => {
+  const { TopupGameId } = req.body;
+
+  try {
+    if (!TopupGameId) {
+      return res.status(400).json({
+        message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
+      });
+    }
+
+    db.query(
+      "DELETE FROM topupgame WHERE id = ?",
+      [TopupGameId],
+      (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+        return res.status(201).json({ message: "ลบกิจกรรมเสร็จสิ้น" });
+      }
+    );
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการลบกิจกรรม" });
+  }
+});
+
+app.post("/add-user", async (req, res) => {
+  const {
+    username,
+    email,
+    urole,
+    money,
+  } = req.body;
+
+  const password = 1234;
+
+  try {
+    if (!username || !email) {
+      return res.status(400).json({
+        message: "โปรดกรอกข้อมูลที่จำเป็นให้ครบ",
+      });
+    }
+
+    db.query(
+      "INSERT INTO users (username, email, password, money, urole) VALUES ( ?, ?, ?, ?, ?)",
+      [
+        username,
+        email,
+        password,
+        money,
+        urole,
+      ],
+      (error, results) => {
+        if (error) {
+          console.error(error);
+          return res.status(500).json({ type: "error", message: "มีข้อผิดพลาดเกิดขึ้น" });
+        }
+        return res.status(201).json({ type: "ssuccess", message: "เพิ่มผู้ใช้เสร็จสิ้น" });
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการเพิ่มผู้ใช้" });
+  }
+});
+
+app.post("/update-user", async (req, res) => {
+  const { userId, username, email, password, money, urole } = req.body;
+
+  try {
+    db.query("SELECT * FROM users WHERE id = ?", [userId], (error, results) => {
+      if (error || results.length === 0) {
+        return res.status(500).json({ type: "error", message: "ไม่พบผู้ใช้หรือเกิดข้อผิดพลาด" });
+      }
+
+      const currentUser = results[0];
+      const updateFields = [];
+      const updateValues = [];
+
+      if (username && username !== currentUser.username) {
+        updateFields.push("username = ?");
+        updateValues.push(username);
+      }
+      if (email && email !== currentUser.email) {
+        updateFields.push("email = ?");
+        updateValues.push(email);
+      }
+      if (password && password !== currentUser.password) {
+        updateFields.push("password = ?");
+        updateValues.push(password);
+      }
+      if (money !== undefined && money !== currentUser.money) {
+        updateFields.push("money = ?");
+        updateValues.push(money);
+      }
+      if (urole && urole !== currentUser.urole) {
+        updateFields.push("urole = ?");
+        updateValues.push(urole);
+      }
+
+      if (updateFields.length > 0) {
+        updateValues.push(userId);
+        const updateQuery = `UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`;
+        db.query(updateQuery, updateValues, (updateError) => {
+          if (updateError) {
+            return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตผู้ใช้" });
+          }
+          return res.status(200).json({ type: "success", message: "อัพเดตผู้ใช้เสร็จสิ้น" });
+        });
+      } else {
+        return res.status(200).json({ type: "info", message: "ไม่มีการเปลี่ยนแปลงข้อมูลผู้ใช้" });
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ type: "error", message: "เกิดข้อผิดพลาดในการอัพเดตผู้ใช้" });
+  }
+});
+
 app.post("/delete-user", async (req, res) => {
   const { userId } = req.body;
 
@@ -2053,180 +2492,10 @@ app.post("/delete-user", async (req, res) => {
         return res.status(201).json({ message: "ลบผู้ใช้เสร็จสิ้น" });
       }
     );
+
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "เกิดข้อผิดพลาดในการลบผู้ใช้" });
-  }
-});
-
-
-
-app.post("/update-user", async (req, res) => {
-  const { userId, urole, money } = req.body;
-
-  try {
-    db.query(
-      "SELECT * FROM users WHERE id = ?",
-      [userId],
-      async (error) => {
-        if (error) {
-          console.error(error);
-          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-        }
-
-        db.query(
-          "UPDATE users SET urole = ?, money = ? WHERE id = ?",
-          [urole, money, userId],
-          (error) => {
-            if (error) {
-              console.error(error);
-              return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-            }
-
-            db.query(
-              "SELECT * FROM users WHERE id = ?",
-              [userId],
-              (error) => {
-                if (error) {
-                  console.error(error);
-                  return res
-                    .status(500)
-                    .json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-                }
-
-                return res.status(200).json({
-                  message: "อัปเดตข้อมูลเรียบร้อยแล้ว"
-                });
-              }
-            );
-          }
-        );
-      }
-    );
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการแก้ไขข้อมูล" });
-  }
-});
-
-app.post("/change-user", async (req, res) => {
-  const { userId, selectedProfile, username, email, password } = req.body;
-
-  try {
-    db.query(
-      "SELECT * FROM users WHERE id = ?",
-      [userId],
-      async (error, results) => {
-        if (error) {
-          console.error(error);
-          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-        }
-
-        if (results.length === 0) {
-          return res
-            .status(401)
-            .json({ message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
-        }
-
-        const user = results[0];
-
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) {
-          return res
-            .status(401)
-            .json({ message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" });
-        }
-
-        db.query(
-          "UPDATE users SET profile = ?, username = ?, email = ? WHERE id = ?",
-          [selectedProfile, username, email, userId],
-          (error) => {
-            if (error) {
-              console.error(error);
-              return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-            }
-
-            db.query(
-              "SELECT * FROM users WHERE id = ?",
-              [userId],
-              (error, updatedResults) => {
-                if (error) {
-                  console.error(error);
-                  return res
-                    .status(500)
-                    .json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-                }
-
-                const updatedUser = updatedResults[0];
-                return res.status(200).json({
-                  message: "อัปเดตข้อมูลเรียบร้อยแล้ว",
-                  user: updatedUser,
-                });
-              }
-            );
-          }
-        );
-      }
-    );
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในการแก้ไขข้อมูล" });
-  }
-});
-
-app.post("/change-password", async (req, res) => {
-  const { userId, password_n, password_c, password } = req.body;
-
-  if (password_n !== password_c) {
-    return res.status(400).json({ message: "รหัสผ่านใหม่ไม่ตรงกัน" });
-  }
-
-  try {
-    db.query(
-      "SELECT * FROM users WHERE id = ?",
-      [userId],
-      async (error, results) => {
-        if (error) {
-          console.error(error);
-          return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-        }
-
-        if (results.length === 0) {
-          return res.status(404).json({ message: "ไม่พบผู้ใช้" });
-        }
-
-        const user = results[0];
-
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) {
-          return res
-            .status(401)
-            .json({ message: "รหัสผ่านปัจจุบันไม่ถูกต้อง" });
-        }
-
-        const hashedNewPassword = await bcrypt.hash(password_n, 10);
-
-        db.query(
-          "UPDATE users SET password = ? WHERE id = ?",
-          [hashedNewPassword, userId],
-          (error) => {
-            if (error) {
-              console.error(error);
-              return res.status(500).json({ message: "มีข้อผิดพลาดเกิดขึ้น" });
-            }
-
-            return res
-              .status(200)
-              .json({ message: "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว" });
-          }
-        );
-      }
-    );
-  } catch (error) {
-    console.error(error);
-    return res
-      .status(500)
-      .json({ message: "เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน" });
   }
 });
 
@@ -2270,15 +2539,6 @@ function saveChannelData(guildId, channelId, type, channelNameInput) {
   };
   fs.writeFileSync(dataFilePath, JSON.stringify(data, null, 2));
 }
-
-function loadChannelData() {
-  if (fs.existsSync(dataFilePath)) {
-    const data = fs.readFileSync(dataFilePath);
-    return JSON.parse(data);
-  }
-  return null;
-}
-
 
 const { Client, IntentsBitField, PermissionsBitField } = require('discord.js');
 const { EmbedBuilder } = require('@discordjs/builders');
@@ -2444,10 +2704,11 @@ client.on('guildMemberRemove', async member => {
   try {
     await channel.send({ embeds: [embed] });
   } catch (error) {
-    console.error('Error sending leave message:', error); 
-  } 
+    console.error('Error sending leave message:', error);
+  }
 });
 
-app.listen(3001, () => {
-  console.log(`Server is running...`);
-}); 
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
